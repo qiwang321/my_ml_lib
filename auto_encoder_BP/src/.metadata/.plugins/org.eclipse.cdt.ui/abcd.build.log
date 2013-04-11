@@ -1,0 +1,6 @@
+13:30:32 **** Incremental Build of configuration Release for project abcd ****
+make all 
+make: Nothing to be done for `all'.
+
+13:30:32 Build Finished (took 63ms)
+

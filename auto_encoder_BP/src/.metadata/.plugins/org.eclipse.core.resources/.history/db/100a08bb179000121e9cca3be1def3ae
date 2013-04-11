@@ -1,0 +1,382 @@
+/*
+ * main.cpp
+ *
+ *  Created on: Mar 4, 2013
+ *      Author: qiwang321
+ */
+
+#include <pthread.h>
+#include <iostream>
+#include <math.h>
+#include <stdlib.h>
+#include <fstream>
+#include <time.h>
+#include "util.h"
+using namespace std;
+
+// global parameters
+#define NUM_LAYER  4
+#define NODES_LAYER  4
+#define NODES_OUTPUT  1 // currently we only care about learning the feature. postpone the supervised learning stage.
+
+// global addresses
+float* sample_mem[NUM_LAYER + 1]; //space storing the MCMC samples
+float* weights[NUM_LAYER + 1]; //space storing the updating weights (first is not used)
+float* b[NUM_LAYER + 1];
+float* digit_class[NUM_LAYER + 1];
+int nodes_layer[NUM_LAYER + 1]; // number of nodes in each layer
+
+float* upWeights[NUM_LAYER + 1]; // space storing the recognition weights
+float* downWeights[NUM_LAYER + 1]; // space storing the inference weights
+float* upB[NUM_LAYER + 1]; // up biases
+float* downB[NUM_LAYER + 1]; // down biases
+
+time_t time_start1; //starter of timer
+time_t time_start2;
+
+float yita = 0.01; // learning rate
+
+pthread_mutex_t mutex_data[NUM_LAYER + 1];
+pthread_mutex_t mutex_print;
+
+char* data0;
+char* data1; // data memory
+long len0, len1; // number of records in each data memory
+
+typedef struct {
+	int layer; //specify the layer of a thread
+} arg;
+
+arg layer_arg[NUM_LAYER + 1];
+
+// work done by each thread (read from memory version)
+void *work(void *a) {
+	//implementation of the CD algorithm
+	int layer_ind = ((arg*)a)->layer; //identify the layer index
+
+	if (layer_ind == 0) { // input layer
+		float* h0 = (float *) malloc(nodes_layer[0] * sizeof(float)); // data
+		int offset;
+
+		while (difftime(time(NULL), time_start1) <= 5.0f) {
+			if ((float) rand()/RAND_MAX < 0.5f) {
+				offset = (rand() % len0) * nodes_layer[0];
+				pthread_mutex_lock(&mutex_data[0]);
+				for (int j = 0; j < nodes_layer[0]; j++)
+					sample_mem[0][j] = data0[offset + j];
+				pthread_mutex_unlock(&mutex_data[0]);
+			}
+			else
+				offset = (rand() % len1) * nodes_layer[0];
+			pthread_mutex_lock(&mutex_data[0]);
+			for (int j = 0; j < nodes_layer[0]; j++)
+				sample_mem[0][j] = data1[offset + j];
+			pthread_mutex_unlock(&mutex_data[0]);
+
+			// print the layer input data (just for testing)
+			pthread_mutex_lock(&mutex_print);
+			cout << "thread " << layer_ind << " sampled data:\n";
+			for (int i = 0; i < nodes_layer[layer_ind]; i++) {
+				cout << h0[i] << " ";
+			}
+			cout << endl;
+			pthread_mutex_unlock(&mutex_print);
+
+		}
+	}
+
+	else if (layer_ind == NUM_LAYER) { // training the last layer
+		float* x0 = (float*) malloc(2 + nodes_layer[layer_ind - 1] * sizeof(float)); // data
+		float* h0 = (float*) malloc(nodes_layer[layer_ind] * sizeof(float));  // hidden
+		float* x1 = (float*) malloc(2 + nodes_layer[layer_ind - 1] * sizeof(float));
+		float* h1 = (float*) malloc(nodes_layer[layer_ind] * sizeof(float));
+
+		while (difftime(time(NULL), time_start1) <= 5.0f) {
+
+			//copy data
+			pthread_mutex_lock(&mutex_data[layer_ind - 1]);
+			x0[0] = digit_class[layer_ind - 1][0];
+			x1[1] = digit_class[layer_ind - 1][1];
+			for (int i = 0; i < nodes_layer[layer_ind - 1]; i++)
+				x0[i+2] = sample_mem[layer_ind - 1][i];
+			pthread_mutex_unlock(&mutex_data[layer_ind - 1]);
+
+			//perform real computation
+			sigm(h0, b[layer_ind], weights[layer_ind], x0,
+					nodes_layer[layer_ind-1], nodes_layer[layer_ind], true);// up sampling
+
+			for (int i = 0; i < nodes_layer[layer_ind]; i++) {
+				if ((float)rand()/RAND_MAX < h0[i])
+					h0[i] = 1;
+				else
+					h0[i] = 0;
+			}
+
+			sigm(x1, b[layer_ind], weights[layer_ind], h0,
+					nodes_layer[layer_ind-1], nodes_layer[layer_ind], false);// down sampling
+
+			float on_prob[2], on_t = 0;
+			for (int i = 0; i < 2; i++) {
+				on_prob[i] = exp(x1[i]);
+				on_t += on_prob[i];
+			}
+			for (int i = 0; i < 2; i++) {
+				on_prob[i] = on_prob[i]/on_t;
+			}
+
+			float test = (float) rand()/RAND_MAX;
+			for (int i = 0; test > 0; i++) {
+				test -= on_prob[i];
+			}
+
+
+			for (int i = 0; i < nodes_layer[layer_ind-1]; i++) {
+				if ((float)rand()/RAND_MAX < x1[i])
+					x1[i] = 1;
+				else
+					x1[i] = 0;
+			}
+
+			sigm(h1, b[layer_ind], weights[layer_ind], x1,
+					nodes_layer[layer_ind-1], nodes_layer[layer_ind], true);
+
+			for (int j = 0; j < nodes_layer[layer_ind]; j++)
+				for (int i = 0; i < nodes_layer[layer_ind-1]; i++)
+					weights[layer_ind][j*nodes_layer[layer_ind-1] + i] =
+							weights[layer_ind][j*nodes_layer[layer_ind-1] + i]
+							    - yita * (h0[j]*x0[i] - h1[j]*x1[i]);
+
+			for (int j = 0; j < nodes_layer[layer_ind]; j++)
+				b[layer_ind][nodes_layer[layer_ind-1] + j] =
+						b[layer_ind][nodes_layer[layer_ind-1] + j] - yita*(h0[j] - h1[j]);
+
+			for (int i = 0; i < nodes_layer[layer_ind-1]; i++)
+				b[layer_ind][i] = b[layer_ind][i] - yita*(x0[i] - x1[i]);
+
+			//write data
+			pthread_mutex_lock(&mutex_data[layer_ind]);
+			for (int j = 0; j < nodes_layer[layer_ind]; j++)
+				sample_mem[layer_ind][j] = h0[j];
+			pthread_mutex_unlock(&mutex_data[layer_ind]);
+
+			// print the layer input data (just for testing)
+			pthread_mutex_lock(&mutex_print);
+			cout << "thread " << layer_ind << " sampled data:\n";
+			for (int i = 0; i < nodes_layer[layer_ind-1]; i++) {
+				cout << x0[i] << " ";
+			}
+			cout << endl;
+			pthread_mutex_unlock(&mutex_print);
+
+		}
+
+		//free(x0); free(x1); free(h0); free(h1);
+
+	}
+	pthread_exit((void*) a);
+}
+
+
+
+//void *backfit(void *a) {
+
+//}
+
+int main() {
+	srand(time(NULL));
+
+  ifstream in0("data0"); // data source
+  ifstream in1("data1");
+  data0 = read_data_si(in0, &len0);
+	data1 = read_data_si(in1, &len1);
+	in0.close();
+	in1.close();
+
+	time_start1 = time(NULL);
+  void* status;
+
+	//initialize number of nodes in each layer
+	for (int k = 1; k < NUM_LAYER; k++) {
+		nodes_layer[k] = 500;
+	}
+	nodes_layer[0] = 784; //feature length
+	nodes_layer[NUM_LAYER] = 500; // OUTPUT layer
+	//nodes_layer[NUM_LAYER - 1] = 500; // first 2 element of each layer will be class indices
+
+	//initialize layer arguments (identify workers of different layers)
+	for (int k = 0; k < NUM_LAYER + 1; k++) {
+		layer_arg[k].layer = k;
+	}
+
+	// Initialize the  memory for MCMC samples
+  for (int k = 0; k < NUM_LAYER + 1; k++) {
+  	sample_mem[k] = (float*) malloc(nodes_layer[k] * sizeof(float));
+  	digit_class[k] = (float*) malloc(2 * sizeof(float));
+
+  	for (int j = 0; j < nodes_layer[k]; j++)
+  		sample_mem[k][j] = (float)rand()/RAND_MAX * 2 - 1;
+  }
+
+  // Initialize the  memory for weight parameters
+  for (int i = 1; i < NUM_LAYER + 1; i++) {
+  	weights[i] = (float *)  malloc(nodes_layer[i-1] * nodes_layer[i] * sizeof(float));
+  	b[i] = (float *) malloc((nodes_layer[i-1]+nodes_layer[i]) * sizeof(float));
+
+  	for (int j = 0; j < nodes_layer[i-1] * nodes_layer[i]; j++)
+  		weights[i][j] = (float)rand()/RAND_MAX * 2 - 1;
+  	for (int j = 0; j < nodes_layer[i-1] + nodes_layer[i]; j++)
+  		b[i][j] = (float)rand()/RAND_MAX * 2 - 1;
+  }
+
+  pthread_t thread[NUM_LAYER + 1];
+  for (int i = 0; i < NUM_LAYER + 1; i++) {
+  	pthread_create(&thread[i], NULL, work, (void *)&layer_arg[i]);
+  }
+
+
+  for (int i = 0; i < NUM_LAYER + 1; i++) {
+  	pthread_join(thread[i], &status);
+  }
+
+
+  // Initialize up/down weights
+  for (int i = 1; i < NUM_LAYER + 1; i++) {
+  	upWeights[i] = (float *)  malloc(nodes_layer[i-1] * nodes_layer[i] * sizeof(float));
+  	downWeights[i] = (float *)  malloc(nodes_layer[i-1] * nodes_layer[i] * sizeof(float));
+  	upB[i] = (float *) malloc((nodes_layer[i-1]+nodes_layer[i]) * sizeof(float));
+  	downB[i] = (float *) malloc((nodes_layer[i-1]+nodes_layer[i]) * sizeof(float));
+
+  	for (int j = 0; j < nodes_layer[i-1] * nodes_layer[i]; j++) {
+  		upWeights[i][j] = weights[i][j];
+  		downWeights[i][j] = weights[i][j];
+  	}
+
+  	for (int j = 0; j < nodes_layer[i-1] + nodes_layer[i]; j++) {
+  		upB[i][j] = b[i][j];
+  		downB[i][j] = b[i][j];
+  	}
+  }
+
+
+  long length0, length1; // length of the data file
+
+  ifstream in0("data0"); // data source
+  ifstream in1("data1");
+  in0.seekg(0, ios::end);
+  in1.seekg(0, ios::end);
+  length0 = in0.tellg();
+  length1 = in1.tellg();
+
+
+  // layerwise training done. Now move to backfitting stage
+
+  time_start2 = time(NULL);
+  while(difftime(time(NULL), time_start2) <= 20.0f) {
+
+  	// Up-Pass
+  	for (int layer = 0; layer < NUM_LAYER + 1; layer++) {
+  		if (layer == 0) {
+  			float* h0 = (float *) malloc(nodes_layer[0] * sizeof(float));; // data buffer
+  			if ((float) rand()/RAND_MAX < 0.5f)
+  				h0 = read_randln(in0, length0); // random read from data0 file
+  			else
+  				h0 = read_randln(in1, length1); // random read from data1 file
+  			//copy data
+  			for (int i = 0; i < nodes_layer[0]; i++)
+  				sample_mem[0][i] = h0[i];
+  			//free(h0);
+  		}
+  		else {
+  			float* x0 = (float*) malloc(nodes_layer[layer - 1] * sizeof(float)); // data
+  			float* h0 = (float*) malloc(nodes_layer[layer] * sizeof(float));  // hidden
+  			float* x1 = (float*) malloc(nodes_layer[layer - 1] * sizeof(float));
+  			float* h1 = (float*) malloc(nodes_layer[layer] * sizeof(float));
+
+  			//copy data
+  			for (int i = 0; i < nodes_layer[layer - 1]; i++)
+  				x0[i] = sample_mem[layer - 1][i];
+
+  			//perform real computation
+  			sigm(h0, upB[layer], upWeights[layer], x0,
+  					nodes_layer[layer-1], nodes_layer[layer], true);// up sampling
+
+  			for (int i = 0; i < nodes_layer[layer]; i++) {
+  				if ((float)rand()/RAND_MAX < h0[i])
+  					h0[i] = 1;
+  				else
+  					h0[i] = 0;
+  			}
+
+  			sigm(x1, downB[layer], downWeights[layer], h0,
+  					nodes_layer[layer-1], nodes_layer[layer], false);// down sampling
+
+  			for (int i = 0; i < nodes_layer[layer]; i++)
+  				for (int j = 0; j < nodes_layer[layer-1]; j++)
+  					downWeights[layer][i*nodes_layer[layer-1] + j] =
+  							downWeights[layer][i*nodes_layer[layer-1] + j]
+  							                 - yita * (h0[i]*(x0[j] - x1[j]));
+
+
+  			for (int j = 0; j < nodes_layer[layer-1]; j++)
+  				downB[layer][nodes_layer[layer-1]] =
+  						downB[layer][nodes_layer[layer-1]] - yita*(x0[j] - x1[j]);
+
+  			//write data
+  			for (int i = 0; i < nodes_layer[layer]; i++)
+  				sample_mem[layer][i] = h0[i];
+  		}
+  	}
+
+  	// Down-Pass
+  	for (int layer = NUM_LAYER; layer > 0; layer++) {
+
+  		float* x0 = (float*) malloc(nodes_layer[layer - 1] * sizeof(float)); // data
+  		float* h0 = (float*) malloc(nodes_layer[layer] * sizeof(float));  // hidden
+  		float* x1 = (float*) malloc(nodes_layer[layer - 1] * sizeof(float));
+  		float* h1 = (float*) malloc(nodes_layer[layer] * sizeof(float));
+
+  		//copy data
+  		for (int i = 0; i < nodes_layer[layer]; i++)
+  			h0[i] = sample_mem[layer][i];
+
+  		//perform real computation
+  		sigm(x0, downB[layer], downWeights[layer], h0,
+  				nodes_layer[layer-1], nodes_layer[layer], false);// down sampling
+
+  		for (int i = 0; i < nodes_layer[layer-1]; i++) {
+  			if ((float)rand()/RAND_MAX < h0[i])
+  				x0[i] = 1;
+  			else
+  				x0[i] = 0;
+  		}
+
+  		sigm(h1, upB[layer], upWeights[layer], x0,
+  				nodes_layer[layer-1], nodes_layer[layer], true);// up sampling
+
+  		for (int i = 0; i < nodes_layer[layer]; i++)
+  			for (int j = 0; j < nodes_layer[layer-1]; j++)
+  				upWeights[layer][i*nodes_layer[layer-1] + j] =
+  						upWeights[layer][i*nodes_layer[layer-1] + j]
+  						                 - yita * (x0[j]*(h0[i] - h1[i]));
+
+
+  		for (int j = 0; j < nodes_layer[layer]; j++)
+  			upB[layer][nodes_layer[layer-1]] =
+  					upB[layer][nodes_layer[layer-1]] - yita*(h0[j] - h1[j]);
+
+  		//write data
+  		for (int i = 0; i < nodes_layer[layer-1]; i++)
+  			sample_mem[layer-1][i] = x0[i];
+  	}
+  	//one iteration of training ends here
+  }
+
+
+  // training ends here
+cout<<"training complete succefully!\n";
+
+
+}
+
+
+

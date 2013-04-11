@@ -1,0 +1,6 @@
+11:31:14 **** Incremental Build of configuration Release for project pthread_template1 ****
+make all 
+make: Nothing to be done for `all'.
+
+11:31:14 Build Finished (took 65ms)
+

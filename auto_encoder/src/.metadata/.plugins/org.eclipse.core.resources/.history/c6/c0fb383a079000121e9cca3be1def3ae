@@ -1,0 +1,50 @@
+/*
+ * util.h
+ *
+ *  Created on: Mar 4, 2013
+ *      Author: qiwang321
+ */
+
+#ifndef UTIL_H_
+#define UTIL_H_
+
+
+
+
+#endif /* UTIL_H_ */
+
+/*
+ * util.cpp
+ *
+ *  Created on: Mar 4, 2013
+ *      Author: qiwang321
+ */
+
+#include <cmath>
+#include <stdlib.h>
+#include <iostream>
+#include <fstream>
+#include <string>
+using namespace std;
+
+// global parameters
+//#define NUM_LAYER  7
+//#define NODES_LAYER  4
+//#define NODES_INPUT  10
+//#define NODES_OUTPUT  4
+
+/* function for computing sigmoid function
+ * b: bias
+ * w: weight vector
+ * x: data vector
+ */
+
+//compute the sigmoid function
+void sigm(float* res, float* b, float* W, float* x, int n, int m, bool dir);
+
+//sample a Bernoulli r.v.
+int binrand(float p);
+
+//read random record from stream: length is the length of the file
+//acquired by the calling function.
+float* read_randln(ifstream& in, long length);

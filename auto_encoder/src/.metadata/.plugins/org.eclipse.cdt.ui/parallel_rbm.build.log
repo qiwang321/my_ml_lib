@@ -1,0 +1,6 @@
+13:38:16 **** Incremental Build of configuration Debug for project parallel_rbm ****
+make all 
+make: Nothing to be done for `all'.
+
+13:38:16 Build Finished (took 69ms)
+

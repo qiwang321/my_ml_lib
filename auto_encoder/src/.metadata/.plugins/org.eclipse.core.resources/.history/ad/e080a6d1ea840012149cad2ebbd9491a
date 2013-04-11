@@ -1,0 +1,67 @@
+/*
+ * main.cpp
+ *
+ *  Created on: Mar 4, 2013
+ *      Author: qiwang321
+ */
+
+#include <pthread.h>
+#include <iostream>
+#include <math.h>
+#include <stdlib.h>
+using namespace std;
+
+// global addresses, paramters
+#define NUM_LAYER  7
+#define NODES_LAYER  4
+#define NODES_INPUT  10
+#define NODES_OUTPUT  4 // currently we only care about learning the feature. postpone the supervised learning stage.
+
+float* sample_mem[NUM_LAYER]; //space storing the MCMC samples
+float* weights[NUM_LAYER]; //space storing the updating weights
+pthread_mutex_t mutex_print;
+
+typedef struct {
+	int layer; //specify the layer of a thread
+} arg;
+
+arg layer_arg[7];
+
+// work done by each thread
+void *work(void *a) {
+	//implementation of the CD algorithm
+	pthread_mutex_lock(&mutex_print);
+	cout<<"this is thread " << ((arg *)a)->layer << endl;
+	pthread_mutex_unlock(&mutex_print);
+
+}
+
+int main() {
+	//initialize layer arguments
+	for (int i = 0; i < NUM_LAYER; i++) {
+		layer_arg[i].layer = i;
+	}
+
+	// Allocate the tmp memory for MCMC samples
+  for (int i = 0; i < NUM_LAYER; i++) {
+  	sample_mem[i] = (float *) malloc(4*sizeof(float));
+  }
+
+  // Allocate the tmp memory for weight parameters
+  weights[0] = (float *) malloc(NODES_INPUT * NODES_LAYER * sizeof(float));
+  for (int i = 1; i < NUM_LAYER - 1; i++) {
+  	weights[i] = (float *)  malloc(NODES_LAYER * NODES_LAYER * sizeof(float));
+  }
+  weights[NUM_LAYER - 1] = (float *) malloc(NODES_OUTPUT * NODES_LAYER * sizeof(float));
+
+  pthread_t thread[NUM_LAYER];
+  for (int i = 0; i < NUM_LAYER; i++) {
+  	pthread_create(&thread[i], NULL, work, (void *)&layer_arg[i]);
+  }
+
+
+  //pthread_exit(NULL);
+}
+
+
+

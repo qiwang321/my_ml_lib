@@ -1,0 +1,18 @@
+/*
+ * util.cpp
+ *
+ *  Created on: Mar 4, 2013
+ *      Author: qiwang321
+ */
+
+/* function for computing sigmoid function
+ * b: bias
+ * w: weight vector
+ * x: data vector
+ */
+float sigm(float b, float* w, float* x) {
+	float result;
+	result = -b
+}
+
+

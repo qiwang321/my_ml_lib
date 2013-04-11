@@ -1,0 +1,29 @@
+/*
+ * util.cpp
+ *
+ *  Created on: Mar 4, 2013
+ *      Author: qiwang321
+ */
+
+#include <cmath>
+#include <stdlib.h>
+/* function for computing sigmoid function
+ * b: bias
+ * w: weight vector
+ * x: data vector
+ */
+
+float sigm(float b, float* w, float* x, int n) {
+	float result = -b;
+	for (int i = 0; i < n; i++) {
+		result = result - w[i] * x[i];
+	}
+	result = 1 / (1 + exp(result));
+	return result;
+}
+
+int binrand(float p) {
+	srand(time(NULL));
+	float t =
+}
+

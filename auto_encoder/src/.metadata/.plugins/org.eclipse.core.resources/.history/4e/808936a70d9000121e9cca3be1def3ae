@@ -1,0 +1,135 @@
+/*
+ * util.cpp
+ *
+ *  Created on: Mar 4, 2013
+ *      Author: qiwang321
+ */
+
+#include <cmath>
+#include <stdlib.h>
+#include <iostream>
+#include <fstream>
+#include <string>
+using namespace std;
+
+// global parameters
+#define NUM_LAYER  7
+#define NODES_LAYER  4
+#define NODES_INPUT  784
+#define NODES_OUTPUT  4
+
+/* function for computing sigmoid function
+ * b: bias
+ * w: weight vector
+ * x: data vector
+ */
+
+//compute the sigmoid of a layer
+void sigm(float* res, float* b, float* W, float* x, int n, int m, bool dir) {
+	if (dir == 1) { //up
+
+		for (int i = 0; i < n; i++) {
+			res[i] = -b[m+i];
+			for (int j = 0; j < m; j++)
+				res[i] = res[i] - W[i*m + j] * x[j];
+			res[i] = 1 / (1 + exp(res[i]));
+		}
+
+	}
+
+	else { //down
+
+		for (int j = 0; j < m; j++){
+			res[j] = -b[j];
+			for (int i = 0; i < n; i++)
+				res[j] = res[j] - W[i*m + j] * x[i];
+			res[j] = 1 / (1 + exp(res[j]));
+		}
+
+	}
+
+}
+
+//sample a Bernoulli r.v.
+int binrand(float p) {
+	srand(time(NULL));
+	float t = rand()/((float) RAND_MAX);
+	return t < p ? 1:0;
+}
+
+//read random record from stream: length is the length of the file
+//acquired by the calling function.
+float* read_randln(ifstream& in, long length) {
+
+	char* buffer = (char *) malloc(4096*sizeof(char)); //string buffer
+	float* record = (float *) malloc(NODES_INPUT * sizeof(float));
+	//srand(time(NULL));
+  long pos = rand() % length; // random position
+  in.seekg(pos, ios::beg); // move pointer to the new position
+  in.getline(buffer, 4096); // skip the incomplete line
+  in.getline(buffer, 4096); // read the record
+
+  while (buffer[0] == 0) { //resample
+  	pos = rand() % length;
+  	in.clear(); //clear stream states
+  	in.seekg(pos, ios::beg);
+  	in.getline(buffer, 4096);
+  	in.getline(buffer, 4096); // read the record
+  }
+
+
+
+  //parsing: current only be able to read records of aligned lengths
+  //x1 x2 x3\n
+  char* word = buffer;// a single word to be parsed
+  char* p = buffer; // probing pointer
+  int i = 1; // index of the component
+  sscanf(word, "%f", &record[0]); // get the first component
+
+  while (*p != 0) {
+  	if (*p == ' ' || *p == '\t') {
+  		word = p+1;
+  		sscanf(word, "%f", &record[i]);
+  		i += 1;
+  	}
+  	p += 1;
+  }
+
+  return record;
+
+}
+
+// read data from a single index to memory
+char* read_data_si(ifstream& in, long* length, int index) {
+	char* buffer = (char *) malloc(2000*sizeof(char)); // buffer for a record
+	char* records = NULL;
+	int count = 0; //count of total number of records
+
+	char* data = NULL;
+	in.getline(buffer, 2000);
+	while (buffer != 	NULL) {
+		count++;
+		records =  (char *) realloc(records, NODES_INPUT * count * sizeof(char));
+
+		char* word; // word to store a single value
+		int token; // store the actual value
+		char* p = buffer; // probing pointer
+		int i = 0; // index of the component
+
+		while (1) {
+			while ((*p < '0' || *p > '9') && p != 0) p++;
+			if (p == 0) break;
+			word = p;
+			sscanf(word, "%d", &token);
+			records[NODES_INPUT * count + i] = (char) ((int)'0' + token)
+			while (*p >= '0' && *p <= '9') p++;
+		}
+
+
+
+
+	}
+
+
+
+}
